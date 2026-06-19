@@ -1,0 +1,28 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git rsync curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /octodns
+COPY requirements.txt /octodns/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY gitops/ /octodns/gitops/
+COPY config-compose.yaml /octodns/config.yaml
+
+RUN chmod +x /octodns/gitops/entrypoint.sh
+
+ENV OCTODNS_CONFIG=/octodns/config.yaml \
+    ZONES_DIR=/zones \
+    GITOPS_SYNC_INTERVAL=60 \
+    GITOPS_AUTO_APPLY=true \
+    GITOPS_WEBHOOK_ENABLED=true \
+    GITOPS_WEBHOOK_PORT=8088
+
+EXPOSE 8088
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD curl -sf http://127.0.0.1:8088/health || exit 1
+
+ENTRYPOINT ["/octodns/gitops/entrypoint.sh"]

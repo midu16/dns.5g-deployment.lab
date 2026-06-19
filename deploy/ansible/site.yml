@@ -1,0 +1,13 @@
+---
+- name: Deploy Robust DNS stack
+  hosts: dns_servers
+  become: true
+  roles:
+    - role: powerdns
+      tags: [powerdns, auth]
+    - role: dnsdist
+      tags: [dnsdist]
+    - role: unbound
+      tags: [unbound, recursive]
+    - role: monitoring
+      tags: [monitoring]

@@ -1,0 +1,23 @@
+---
+# dnsdist role (skeleton)
+- name: Install dnsdist
+  ansible.builtin.dnf:
+    name: dnsdist
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Deploy dnsdist auth config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../config/dnsdist/dnsdist-auth.conf"
+    dest: /etc/dnsdist/dnsdist-auth.conf
+    mode: "0640"
+  when: dnsdist_role == 'auth'
+  notify: Restart dnsdist
+
+- name: Deploy dnsdist recursive config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../config/dnsdist/dnsdist-recursive.conf"
+    dest: /etc/dnsdist/dnsdist-recursive.conf
+    mode: "0640"
+  when: dnsdist_role == 'recursive'
+  notify: Restart dnsdist

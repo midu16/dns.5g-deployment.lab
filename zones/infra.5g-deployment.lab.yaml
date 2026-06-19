@@ -1,0 +1,11 @@
+---
+'':
+  ttl: 3600
+  type: NS
+  values:
+    - ns1.infra.5g-deployment.lab.
+ns1:
+  ttl: 3600
+  type: A
+  values:
+    - 10.89.2.10

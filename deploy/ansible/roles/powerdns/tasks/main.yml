@@ -1,0 +1,20 @@
+---
+# PowerDNS authoritative role (skeleton)
+- name: Install PowerDNS authoritative
+  ansible.builtin.dnf:
+    name: pdns
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Deploy pdns.conf template
+  ansible.builtin.template:
+    src: pdns.conf.j2
+    dest: /etc/pdns/pdns.conf
+    mode: "0640"
+  notify: Restart pdns
+
+- name: Enable pdns
+  ansible.builtin.systemd:
+    name: pdns
+    enabled: true
+    state: started

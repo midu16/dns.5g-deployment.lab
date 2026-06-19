@@ -1,0 +1,8 @@
+# Alertmanager configuration placeholder
+# Wire to Prometheus in production deployments.
+
+route:
+  receiver: default
+
+receivers:
+  - name: default

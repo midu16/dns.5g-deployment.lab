@@ -1,0 +1,15 @@
+---
+# Monitoring role (skeleton)
+- name: Deploy Prometheus config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../monitoring/prometheus/"
+    dest: /etc/prometheus/
+    mode: "0644"
+  notify: Restart prometheus
+
+- name: Deploy Grafana dashboards
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../monitoring/grafana/"
+    dest: /etc/grafana/provisioning/
+    mode: "0644"
+  notify: Restart grafana

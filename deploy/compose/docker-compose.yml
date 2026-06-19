@@ -1,0 +1,284 @@
+name: robust-dns
+
+networks:
+  control_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.1.0/24
+  auth_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.2.0/24
+  recursive_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.3.0/24
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: robust-dns-postgres
+    env_file: ../../.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pdns}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-pdns-db}
+      POSTGRES_DB: ${POSTGRES_DB:-pdns}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../config/powerdns/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.2
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdns -d pdns"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pdns-primary:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-primary
+    env_file: ../../.env
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-primary.conf:/etc/powerdns/pdns.conf:ro,z
+      - ./scripts/pdns-primary-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.11
+      auth_net:
+        ipv4_address: 10.89.2.11
+    ports:
+      - "8081:8081/tcp"
+    depends_on:
+      - postgres
+    healthcheck:
+      disable: true
+
+  pdns-secondary-1:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-secondary-1
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-secondary.conf:/etc/powerdns/pdns.conf:ro,z
+      - pdns_sec1_data:/var/lib/powerdns
+      - ./scripts/pdns-secondary-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      auth_net:
+        ipv4_address: 10.89.2.12
+    depends_on:
+      - pdns-primary
+
+  pdns-secondary-2:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-secondary-2
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-secondary.conf:/etc/powerdns/pdns.conf:ro,z
+      - pdns_sec2_data:/var/lib/powerdns
+      - ./scripts/pdns-secondary-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      auth_net:
+        ipv4_address: 10.89.2.13
+    depends_on:
+      - pdns-primary
+
+  dnsdist-auth:
+    image: docker.io/powerdns/dnsdist-19:1.9.6
+    container_name: robust-dns-dnsdist-auth
+    command: ["--supervised", "--disable-syslog", "-C", "/etc/dnsdist/dnsdist.conf"]
+    volumes:
+      - ../../config/dnsdist/dnsdist-auth.conf:/etc/dnsdist/dnsdist.conf:ro,z
+    networks:
+      auth_net:
+        ipv4_address: 10.89.2.10
+      recursive_net:
+        ipv4_address: 10.89.3.21
+    ports:
+      - "5300:5300/udp"
+      - "5300:5300/tcp"
+      - "8082:8083/tcp"
+    depends_on:
+      - pdns-primary
+      - pdns-secondary-1
+      - pdns-secondary-2
+
+  unbound-1:
+    image: docker.io/mvance/unbound:1.20.0
+    container_name: robust-dns-unbound-1
+    volumes:
+      - ../../config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro,z
+    networks:
+      recursive_net:
+        ipv4_address: 10.89.3.11
+    depends_on:
+      - dnsdist-auth
+
+  unbound-2:
+    image: docker.io/mvance/unbound:1.20.0
+    container_name: robust-dns-unbound-2
+    volumes:
+      - ../../config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro,z
+    networks:
+      recursive_net:
+        ipv4_address: 10.89.3.12
+    depends_on:
+      - dnsdist-auth
+
+  dnsdist-recursive:
+    image: docker.io/powerdns/dnsdist-19:1.9.6
+    container_name: robust-dns-dnsdist-recursive
+    command: ["--supervised", "--disable-syslog", "-C", "/etc/dnsdist/dnsdist.conf"]
+    volumes:
+      - ../../config/dnsdist/dnsdist-recursive.conf:/etc/dnsdist/dnsdist.conf:ro,z
+    networks:
+      recursive_net:
+        ipv4_address: 10.89.3.10
+    ports:
+      - "5354:5353/udp"
+      - "5354:5353/tcp"
+      - "8083:8083/tcp"
+    depends_on:
+      - unbound-1
+      - unbound-2
+
+  dns-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile.dnstools
+    container_name: robust-dns-dns-tools
+    networks:
+      auth_net:
+        ipv4_address: 10.89.2.40
+      recursive_net:
+        ipv4_address: 10.89.3.40
+
+  coredns:
+    image: docker.io/coredns/coredns:1.11.3
+    container_name: robust-dns-coredns
+    command: ["-conf", "/Corefile"]
+    volumes:
+      - ../../config/coredns/Corefile:/Corefile:ro,z
+    networks:
+      recursive_net:
+        ipv4_address: 10.89.3.20
+    ports:
+      - "1053:53/udp"
+      - "1053:53/tcp"
+    depends_on:
+      - dnsdist-recursive
+
+  octodns-sync:
+    build:
+      context: ../../octodns
+      dockerfile: Dockerfile
+    container_name: robust-dns-octodns
+    env_file: ../../.env
+    environment:
+      PDNS_API_KEY: ${PDNS_API_KEY:-changeme-pdns-api-key}
+    volumes:
+      - ../../zones:/zones:ro,z
+      - ../../octodns/config-compose.yaml:/octodns/config.yaml:ro,z
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.20
+    profiles:
+      - tools
+    depends_on:
+      - pdns-primary
+
+  gitops-controller:
+    build:
+      context: ../../octodns
+      dockerfile: Dockerfile.gitops
+    container_name: robust-dns-gitops
+    env_file: ../../.env
+    environment:
+      PDNS_API_KEY: ${PDNS_API_KEY:-changeme-pdns-api-key}
+      GITOPS_SYNC_INTERVAL: ${GITOPS_SYNC_INTERVAL:-60}
+      GITOPS_AUTO_APPLY: ${GITOPS_AUTO_APPLY:-true}
+      GIT_REPO_URL: ${GIT_REPO_URL:-}
+      GIT_BRANCH: ${GIT_BRANCH:-main}
+      GITOPS_WEBHOOK_ENABLED: ${GITOPS_WEBHOOK_ENABLED:-true}
+      GITOPS_WEBHOOK_PORT: ${GITOPS_WEBHOOK_PORT:-8088}
+      GITOPS_WEBHOOK_TOKEN: ${GITOPS_WEBHOOK_TOKEN:-}
+    volumes:
+      - ../../zones:/zones:ro,z
+      - ../../octodns/config-compose.yaml:/octodns/config.yaml:ro,z
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.21
+    ports:
+      - "8088:8088/tcp"
+    depends_on:
+      - pdns-primary
+    restart: unless-stopped
+
+  prometheus:
+    image: docker.io/prom/prometheus:v2.54.1
+    container_name: robust-dns-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ../../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
+      - ../../monitoring/prometheus/rules:/etc/prometheus/rules:ro,z
+      - ../../monitoring/prometheus/blackbox.yml:/etc/blackbox/blackbox.yml:ro,z
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.10
+    ports:
+      - "9090:9090/tcp"
+    depends_on:
+      - dnsdist-auth
+      - dnsdist-recursive
+
+  blackbox-exporter:
+    image: docker.io/prom/blackbox-exporter:v0.25.0
+    container_name: robust-dns-blackbox
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ../../monitoring/prometheus/blackbox.yml:/etc/blackbox/blackbox.yml:ro,z
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.12
+      auth_net:
+        ipv4_address: 10.89.2.30
+      recursive_net:
+        ipv4_address: 10.89.3.30
+
+  grafana:
+    image: docker.io/grafana/grafana:11.2.2
+    container_name: robust-dns-grafana
+    env_file: ../../.env
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme-grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ../../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro,z
+      - grafana_data:/var/lib/grafana
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.13
+    ports:
+      - "3001:3000/tcp"
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  pdns_sec1_data:
+  pdns_sec2_data:
+  grafana_data:

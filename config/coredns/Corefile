@@ -1,0 +1,16 @@
+# CoreDNS stub — forward-only to recursive dnsdist VIP
+# Host port 1053 maps to this service; K8s uses cluster DNS forward config.
+
+. {
+    forward . 10.89.3.10:5353
+    cache 30
+    errors
+    log
+    reload
+}
+
+5g-deployment.lab:53 {
+    forward . 10.89.3.10:5353
+    cache 30
+    errors
+}

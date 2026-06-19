@@ -1,0 +1,12 @@
+.env
+*.key
+*.private
+secrets/
+*.tsig
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+.DS_Store
+deploy/compose/data/

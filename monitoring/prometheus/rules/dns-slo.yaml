@@ -1,0 +1,65 @@
+groups:
+  - name: dns_slo
+    rules:
+      - alert: DNSBackendDown
+        expr: dnsdist_backend_healthcheck_failures_total > 0 or absent(dnsdist_uptime) == 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "DNS backend unhealthy"
+          description: "A dnsdist backend has failed health checks for more than 30 seconds."
+
+      - alert: DNSAuthProbeFailure
+        expr: probe_success{job="blackbox-dns-auth"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Authoritative DNS probe failing"
+          description: "Blackbox probe against authoritative tier is failing."
+
+      - alert: DNSRecursiveProbeFailure
+        expr: probe_success{job="blackbox-dns-recursive"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Recursive DNS probe failing"
+          description: "Blackbox probe against recursive tier is failing."
+
+      - alert: DNSSECValidationFailure
+        expr: increase(unbound_answer_rcodes{rcode="SERVFAIL"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated DNSSEC validation failures"
+          description: "Unbound is returning elevated SERVFAIL responses, possible validation issue."
+
+      - alert: PowerDNSPrimaryDown
+        expr: up{job="powerdns-primary"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PowerDNS primary is down"
+          description: "PowerDNS primary is not responding to metrics scrape."
+
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL backend for PowerDNS is unavailable."
+
+      - alert: ZoneSerialDrift
+        expr: count(count by (zone) (pdns_zone_serial)) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Zone serial mismatch detected"
+          description: "SOA serial differs across authoritative backends; AXFR propagation may be blocked."

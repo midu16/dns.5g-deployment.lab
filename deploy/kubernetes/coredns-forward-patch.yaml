@@ -1,0 +1,21 @@
+---
+# Patch CoreDNS ConfigMap to forward to recursive dnsdist VIP
+# Apply: oc patch dns/cluster ... or kubectl edit configmap coredns -n kube-system
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: openshift-dns
+  labels:
+    app: robust-dns
+data:
+  robust-dns-forward.server: |
+    # Forward all queries to recursive dnsdist tier
+    forward . RECURSIVE_VIP:53 {
+      max_concurrent 1000
+    }
+  robust-dns-lab.server: |
+    # Lab split-horizon zones
+    5g-deployment.lab:53 {
+      forward . RECURSIVE_VIP:53
+    }

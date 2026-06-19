@@ -1,0 +1,17 @@
+---
+# Skeleton variables — copy to group_vars/all.yml
+pdns_db_host: postgres.example.com
+pdns_db_name: pdns
+pdns_db_user: pdns
+pdns_api_key: "{{ vault_pdns_api_key }}"
+
+tsig_key_name: axfr-key.
+tsig_key_secret: "{{ vault_tsig_secret }}"
+
+auth_vip: 10.89.2.10
+recursive_vip: 10.89.3.10
+recursive_acl: "10.0.0.0/8"
+
+zones:
+  - infra.5g-deployment.lab
+  - api.hub.5g-deployment.lab

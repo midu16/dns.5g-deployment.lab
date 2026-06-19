@@ -1,0 +1,26 @@
+manager:
+  max_workers: 2
+
+providers:
+  config:
+    class: octodns.provider.yaml.YamlProvider
+    directory: /zones
+    enforce_order: false
+  powerdns:
+    class: octodns_powerdns.PowerDnsProvider
+    host: pdns-primary
+    port: 8081
+    api_key: env/PDNS_API_KEY
+    scheme: http
+
+zones:
+  infra.5g-deployment.lab.:
+    sources:
+      - config
+    targets:
+      - powerdns
+  api.hub.5g-deployment.lab.:
+    sources:
+      - config
+    targets:
+      - powerdns

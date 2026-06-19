@@ -1,0 +1,18 @@
+modules:
+  dns_auth:
+    prober: dns
+    timeout: 5s
+    dns:
+      transport_protocol: udp
+      preferred_ip_protocol: ip4
+      query_name: ns1.infra.5g-deployment.lab
+      query_type: A
+
+  dns_recursive:
+    prober: dns
+    timeout: 5s
+    dns:
+      transport_protocol: udp
+      preferred_ip_protocol: ip4
+      query_name: ns1.infra.5g-deployment.lab
+      query_type: A
