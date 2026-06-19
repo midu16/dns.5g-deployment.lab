@@ -68,8 +68,8 @@ $EDITOR zones/infra.5g-deployment.lab.yaml
 
 ```bash
 pip install -r octodns/requirements.txt
-octodns-validate --config-file octodns/config.yaml
-octodns-sync --config-file octodns/config.yaml   # dry-run preview
+octodns-validate --config-file octodns/config-validate.yaml   # no API key needed
+octodns-sync --config-file octodns/config.yaml                # dry-run (needs PDNS_API_KEY)
 ```
 
 ### 3. Open a pull request

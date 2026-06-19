@@ -1,16 +1,25 @@
----
 name: OctoDNS
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'zones/**'
       - 'octodns/**'
+      - '.github/workflows/octodns.yml'
   push:
     branches: [main]
     paths:
       - 'zones/**'
       - 'octodns/**'
+      - '.github/workflows/octodns.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: octodns-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -26,23 +35,24 @@ jobs:
         run: pip install -r octodns/requirements.txt
 
       - name: Validate zone syntax
-        run: octodns-validate --config-file octodns/config.yaml
+        run: octodns-validate --config-file octodns/config-validate.yaml
 
   trigger-sync:
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Trigger GitOps reconcile webhook
         env:
           GITOPS_WEBHOOK_URL: ${{ secrets.GITOPS_WEBHOOK_URL }}
           GITOPS_WEBHOOK_TOKEN: ${{ secrets.GITOPS_WEBHOOK_TOKEN }}
         run: |
-          if [[ -z "$GITOPS_WEBHOOK_URL" ]]; then
-            echo "GITOPS_WEBHOOK_URL not set — skipping webhook trigger."
-            echo "Configure secret to e.g. http://gitops.example.com:8088/sync"
+          if [ -z "${GITOPS_WEBHOOK_URL}" ]; then
+            echo "GITOPS_WEBHOOK_URL not set - skipping webhook trigger."
+            echo "Add repository secret pointing to e.g. http://your-lab:8088/sync"
             exit 0
           fi
-          curl -sf -X POST "$GITOPS_WEBHOOK_URL" \
+          curl -sfS -X POST "${GITOPS_WEBHOOK_URL}" \
             -H "Authorization: Bearer ${GITOPS_WEBHOOK_TOKEN}" \
             -H "Content-Type: application/json"

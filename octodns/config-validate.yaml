@@ -1,0 +1,17 @@
+# CI validation only — no PowerDNS API required
+manager:
+  max_workers: 2
+
+providers:
+  config:
+    class: octodns.provider.yaml.YamlProvider
+    directory: ./zones
+    enforce_order: false
+
+zones:
+  infra.5g-deployment.lab.:
+    sources:
+      - config
+  api.hub.5g-deployment.lab.:
+    sources:
+      - config
