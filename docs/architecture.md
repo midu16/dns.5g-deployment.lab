@@ -184,12 +184,23 @@ Published host ports:
 | 9090/tcp | Prometheus |
 | 3000/tcp | Grafana |
 
-## Explicit non-goals (v1)
+## v2 extensions (optional profiles)
 
-- Custom resolver protocol implementation
-- Anycast / multi-PoP (documented in [scale-out/anycast-bgp.md](scale-out/anycast-bgp.md))
-- Multi-master authoritative (single write path via Git/OctoDNS)
-- Combined dnsmasq-style all-in-one servers
+| v1 non-goal | v2 delivery |
+|-------------|-------------|
+| Custom resolver code | dnsdist Lua policies + Unbound views ([ADR 001](adr/001-custom-resolver-policy-vs-protocol.md)) |
+| Combined dnsmasq-style | `edge` profile — forward + overrides only ([runbook](runbooks/dnsmasq-edge-migration.md)) |
+| Multi-master authoritative | `ha` (PG replica + standby) and `dual-primary` profiles |
+| Anycast / multi-PoP | `anycast` overlay + [anycast-bgp.md](scale-out/anycast-bgp.md), [lab fallback](scale-out/anycast-lab-fallback.md) |
+
+Git remains the single write source of truth. Passive primaries and PoP secondaries receive AXFR from the active primary.
+
+## Explicit non-goals (unchanged)
+
+- Custom DNS wire-protocol / full resolver rewrite
+- Concurrent multi-writer without Git lock
+- Production authoritative zones on dnsmasq
+- ISP-scale anycast DDoS absorption
 
 ## Related documents
 

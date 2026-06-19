@@ -1,0 +1,166 @@
+# Anycast overlay — merge with docker-compose.yml
+# podman-compose -f docker-compose.yml -f docker-compose.anycast.yml --profile anycast up -d
+
+networks:
+  pop_eu_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.4.0/24
+  pop_us_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.5.0/24
+  bgp_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.89.6.0/24
+
+services:
+  frr-router:
+    image: docker.io/frrouting/frr:v9.1.0
+    container_name: robust-dns-frr-router
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ../../config/bird/frr-daemons:/etc/frr/daemons:ro,z
+      - ../../config/bird/frr-bgpd.conf:/etc/frr/bgpd.conf:ro,z
+    networks:
+      bgp_net:
+        ipv4_address: 10.89.6.1
+      pop_eu_net:
+        ipv4_address: 10.89.4.1
+      pop_us_net:
+        ipv4_address: 10.89.5.1
+    profiles:
+      - anycast
+
+  pdns-secondary-pop-eu:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-pop-eu
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-secondary.conf:/etc/powerdns/pdns.conf:ro,z
+      - pdns_pop_eu_data:/var/lib/powerdns
+      - ./scripts/pdns-secondary-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      pop_eu_net:
+        ipv4_address: 10.89.4.12
+      auth_net:
+        ipv4_address: 10.89.2.15
+    profiles:
+      - anycast
+    depends_on:
+      - pdns-primary
+
+  pdns-secondary-pop-us:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-pop-us
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-secondary.conf:/etc/powerdns/pdns.conf:ro,z
+      - pdns_pop_us_data:/var/lib/powerdns
+      - ./scripts/pdns-secondary-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      pop_us_net:
+        ipv4_address: 10.89.5.12
+      auth_net:
+        ipv4_address: 10.89.2.16
+    profiles:
+      - anycast
+    depends_on:
+      - pdns-primary
+
+  dnsdist-pop-eu:
+    image: docker.io/powerdns/dnsdist-19:1.9.6
+    container_name: robust-dns-dnsdist-pop-eu
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ../../config/dnsdist/dnsdist-auth-pop-eu.conf:/etc/dnsdist/dnsdist.conf:ro,z
+      - ./scripts/dnsdist-pop-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      ANYCAST_VIP: ${ANYCAST_VIP:-10.89.99.53}
+    networks:
+      pop_eu_net:
+        ipv4_address: 10.89.4.10
+      bgp_net:
+        ipv4_address: 10.89.4.20
+    ports:
+      - "5310:5300/udp"
+      - "5310:5300/tcp"
+    profiles:
+      - anycast
+    depends_on:
+      - pdns-secondary-pop-eu
+
+  dnsdist-pop-us:
+    image: docker.io/powerdns/dnsdist-19:1.9.6
+    container_name: robust-dns-dnsdist-pop-us
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ../../config/dnsdist/dnsdist-auth-pop-us.conf:/etc/dnsdist/dnsdist.conf:ro,z
+      - ./scripts/dnsdist-pop-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      ANYCAST_VIP: ${ANYCAST_VIP:-10.89.99.53}
+    networks:
+      pop_us_net:
+        ipv4_address: 10.89.5.10
+      bgp_net:
+        ipv4_address: 10.89.5.20
+    ports:
+      - "5311:5300/udp"
+      - "5311:5300/tcp"
+    profiles:
+      - anycast
+    depends_on:
+      - pdns-secondary-pop-us
+
+  bird-pop-eu:
+    image: docker.io/pierrecdn/bird:latest
+    container_name: robust-dns-bird-pop-eu
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    volumes:
+      - ../../config/bird/bird-pop-eu.conf:/etc/bird/bird.conf:ro,z
+    networks:
+      bgp_net:
+        ipv4_address: 10.89.4.21
+      pop_eu_net:
+        ipv4_address: 10.89.4.22
+    profiles:
+      - anycast
+    depends_on:
+      - frr-router
+
+  bird-pop-us:
+    image: docker.io/pierrecdn/bird:latest
+    container_name: robust-dns-bird-pop-us
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    volumes:
+      - ../../config/bird/bird-pop-us.conf:/etc/bird/bird.conf:ro,z
+    networks:
+      bgp_net:
+        ipv4_address: 10.89.5.21
+      pop_us_net:
+        ipv4_address: 10.89.5.22
+    profiles:
+      - anycast
+    depends_on:
+      - frr-router
+
+volumes:
+  pdns_pop_eu_data:
+  pdns_pop_us_data:

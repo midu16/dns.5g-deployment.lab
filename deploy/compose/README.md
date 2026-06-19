@@ -55,6 +55,25 @@ See [zone GitOps runbook](../../docs/runbooks/zone-gitops.md).
 3. TSIG import
 4. DNSSEC signing (`gpgsql-dnssec=yes` required)
 5. NOTIFY to secondaries
+6. Optional: dual-primary B and anycast PoP secondaries when profiles are active
+
+## v2 Compose profiles
+
+| Profile | Services added | Start |
+|---------|----------------|-------|
+| (default) | v1 core | `podman-compose up -d` |
+| `edge` | dnsmasq-edge | `--profile edge` |
+| `edge-dhcp` | dnsmasq-edge-dhcp | `--profile edge-dhcp` |
+| `policy` | dns-tools-ext | `--profile policy` |
+| `ha` | postgres-replica, pdns-standby | `--profile ha` |
+| `dual-primary` | pdns-primary-b | `--profile dual-primary` |
+| `anycast` | PoP EU/US, BIRD, FRR | `-f docker-compose.anycast.yml --profile anycast` |
+
+```bash
+./scripts/generate-dnsmasq-hosts.sh   # before edge profile
+podman-compose --profile edge --profile policy up -d
+podman-compose -f docker-compose.yml -f docker-compose.anycast.yml --profile anycast up -d
+```
 
 ## Tear down
 

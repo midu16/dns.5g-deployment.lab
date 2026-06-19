@@ -72,5 +72,24 @@ for zone in infra.5g-deployment.lab api.hub.5g-deployment.lab; do
   $COMPOSE exec -T pdns-primary /usr/local/bin/pdns_control notify "$zone" 2>/dev/null || true
 done
 
+if podman ps --format '{{.Names}}' 2>/dev/null | grep -q robust-dns-pdns-primary-b; then
+  echo "==> Configuring dual-primary B as secondary of A..."
+  $COMPOSE exec -T pdns-primary-b /usr/local/bin/pdnsutil add-autoprimary 10.89.2.11 pdns-primary st 2>/dev/null || true
+  for zone in infra.5g-deployment.lab api.hub.5g-deployment.lab; do
+    $COMPOSE exec -T pdns-primary-b /usr/local/bin/pdnsutil create-secondary-zone "$zone" 10.89.2.11 2>/dev/null || true
+  done
+fi
+
+if podman ps --format '{{.Names}}' 2>/dev/null | grep -q robust-dns-pdns-pop-eu; then
+  echo "==> Configuring anycast PoP secondaries..."
+  COMPOSE_POP="$COMPOSE -f docker-compose.anycast.yml"
+  for sec in pdns-secondary-pop-eu pdns-secondary-pop-us; do
+    $COMPOSE_POP exec -T "$sec" /usr/local/bin/pdnsutil add-autoprimary 10.89.2.11 pdns-primary st 2>/dev/null || true
+    for zone in infra.5g-deployment.lab api.hub.5g-deployment.lab; do
+      $COMPOSE_POP exec -T "$sec" /usr/local/bin/pdnsutil create-secondary-zone "$zone" 10.89.2.11 2>/dev/null || true
+    done
+  done
+fi
+
 echo "==> Bootstrap complete."
 echo "Run: $ROOT_DIR/tests/smoke/run.sh"

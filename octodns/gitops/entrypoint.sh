@@ -4,13 +4,19 @@ set -euo pipefail
 
 SYNC_INTERVAL="${GITOPS_SYNC_INTERVAL:-60}"
 AUTO_APPLY="${GITOPS_AUTO_APPLY:-true}"
-CONFIG_FILE="${OCTODNS_CONFIG:-/octodns/config.yaml}"
 ZONES_DIR="${ZONES_DIR:-/zones}"
 GIT_REPO_URL="${GIT_REPO_URL:-}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 GIT_WORKDIR="${GIT_WORKDIR:-/git/zones}"
 SYNC_FLAG="${GITOPS_SYNC_FLAG:-/tmp/octodns-sync-requested}"
-PDNS_PRIMARY="${PDNS_PRIMARY:-pdns-primary}"
+
+if [[ "${PDNS_ACTIVE_PRIMARY:-A}" == "B" ]]; then
+  PDNS_PRIMARY="${PDNS_PRIMARY:-pdns-primary-b}"
+  CONFIG_FILE="${OCTODNS_CONFIG:-/octodns/config-dual-primary.yaml}"
+else
+  PDNS_PRIMARY="${PDNS_PRIMARY:-pdns-primary}"
+  CONFIG_FILE="${OCTODNS_CONFIG:-/octodns/config.yaml}"
+fi
 PDNS_API_PORT="${PDNS_API_PORT:-8081}"
 
 log() { echo "[gitops] $(date -Iseconds) $*"; }

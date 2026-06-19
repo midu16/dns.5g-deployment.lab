@@ -55,6 +55,15 @@ groups:
           summary: "PostgreSQL is down"
           description: "PostgreSQL backend for PowerDNS is unavailable."
 
+      - alert: PowerDNSStandbyLag
+        expr: pg_replication_lag_seconds{job="postgres-replica"} > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL replica lag high"
+          description: "Standby replication lag exceeds 30s; review before failover."
+
       - alert: ZoneSerialDrift
         expr: count(count by (zone) (pdns_zone_serial)) > 1
         for: 2m

@@ -16,6 +16,11 @@ networks:
     ipam:
       config:
         - subnet: 10.89.3.0/24
+  external_test_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.200.0/24
 
 services:
   postgres:
@@ -29,6 +34,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../../config/powerdns/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z
+      - ../../config/postgres/init-replication.sql:/docker-entrypoint-initdb.d/02-replication.sql:ro,z
+      - ../../config/postgres/02-replication-hba.sh:/docker-entrypoint-initdb.d/03-replication-hba.sh:ro,z
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=5
+      - -c
+      - hot_standby=on
     networks:
       control_net:
         ipv4_address: 10.89.1.2
@@ -92,6 +107,24 @@ services:
     depends_on:
       - pdns-primary
 
+  pdns-primary-b:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-primary-b
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-primary-b.conf:/etc/powerdns/pdns.conf:ro,z
+      - pdns_primary_b_data:/var/lib/powerdns
+      - ./scripts/pdns-secondary-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      auth_net:
+        ipv4_address: 10.89.2.14
+    profiles:
+      - dual-primary
+    depends_on:
+      - pdns-primary
+
   dnsdist-auth:
     image: docker.io/powerdns/dnsdist-19:1.9.6
     container_name: robust-dns-dnsdist-auth
@@ -117,6 +150,7 @@ services:
     container_name: robust-dns-unbound-1
     volumes:
       - ../../config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro,z
+      - ../../config/unbound/views.conf:/opt/unbound/etc/unbound/views.conf:ro,z
     networks:
       recursive_net:
         ipv4_address: 10.89.3.11
@@ -128,6 +162,7 @@ services:
     container_name: robust-dns-unbound-2
     volumes:
       - ../../config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro,z
+      - ../../config/unbound/views.conf:/opt/unbound/etc/unbound/views.conf:ro,z
     networks:
       recursive_net:
         ipv4_address: 10.89.3.12
@@ -137,12 +172,18 @@ services:
   dnsdist-recursive:
     image: docker.io/powerdns/dnsdist-19:1.9.6
     container_name: robust-dns-dnsdist-recursive
-    command: ["--supervised", "--disable-syslog", "-C", "/etc/dnsdist/dnsdist.conf"]
+    environment:
+      DNSDIST_POLICIES: ${DNSDIST_POLICIES:-split-horizon,blocklist}
     volumes:
       - ../../config/dnsdist/dnsdist-recursive.conf:/etc/dnsdist/dnsdist.conf:ro,z
+      - ../../config/dnsdist/policies:/etc/dnsdist/policies:ro,z
+      - ./scripts/dnsdist-recursive-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
     networks:
       recursive_net:
         ipv4_address: 10.89.3.10
+      auth_net:
+        ipv4_address: 10.89.2.45
     ports:
       - "5354:5353/udp"
       - "5354:5353/tcp"
@@ -161,6 +202,104 @@ services:
         ipv4_address: 10.89.2.40
       recursive_net:
         ipv4_address: 10.89.3.40
+
+  dns-tools-ext:
+    build:
+      context: .
+      dockerfile: Dockerfile.dnstools
+    container_name: robust-dns-dns-tools-ext
+    profiles:
+      - policy
+    networks:
+      external_test_net:
+        ipv4_address: 192.168.200.50
+      recursive_net:
+        ipv4_address: 10.89.3.41
+
+  dnsmasq-edge:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.dnsmasq
+    container_name: robust-dns-dnsmasq-edge
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/dnsmasq/dnsmasq-edge.conf:/etc/dnsmasq.conf:ro,z
+      - ../../config/dnsmasq/generated-hosts:/etc/dnsmasq.d/generated-hosts:ro,z
+    networks:
+      recursive_net:
+        ipv4_address: 10.89.3.50
+    ports:
+      - "5356:5353/udp"
+      - "5356:5353/tcp"
+    profiles:
+      - edge
+    depends_on:
+      - dnsdist-recursive
+
+  dnsmasq-edge-dhcp:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.dnsmasq
+    container_name: robust-dns-dnsmasq-edge-dhcp
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/dnsmasq/dnsmasq-edge.conf:/etc/dnsmasq.conf:ro,z
+      - ../../config/dnsmasq/dnsmasq-edge-dhcp.conf:/etc/dnsmasq.d/dhcp.conf:ro,z
+      - ../../config/dnsmasq/generated-hosts:/etc/dnsmasq.d/generated-hosts:ro,z
+    networks:
+      recursive_net:
+        ipv4_address: 10.89.3.51
+    profiles:
+      - edge-dhcp
+    depends_on:
+      - dnsdist-recursive
+
+  postgres-replica:
+    image: docker.io/library/postgres:16-alpine
+    container_name: robust-dns-postgres-replica
+    env_file: ../../.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pdns}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-pdns-db}
+      POSTGRES_DB: ${POSTGRES_DB:-pdns}
+      POSTGRES_PRIMARY_HOST: postgres
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-changeme-replica}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./scripts/init-replica.sh:/init-replica.sh:ro,z
+    entrypoint: ["/bin/bash", "/init-replica.sh"]
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.3
+    profiles:
+      - ha
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  pdns-standby:
+    image: docker.io/powerdns/pdns-auth-49:4.9.4
+    container_name: robust-dns-pdns-standby
+    env_file: ../../.env
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ../../config/powerdns/pdns-standby.conf:/etc/powerdns/pdns.conf:ro,z
+      - ./scripts/pdns-standby-entrypoint.sh:/entrypoint.sh:ro,z
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      control_net:
+        ipv4_address: 10.89.1.12
+      auth_net:
+        ipv4_address: 10.89.2.17
+    profiles:
+      - ha
+    depends_on:
+      - postgres-replica
 
   coredns:
     image: docker.io/coredns/coredns:1.11.3
@@ -204,6 +343,8 @@ services:
     env_file: ../../.env
     environment:
       PDNS_API_KEY: ${PDNS_API_KEY:-changeme-pdns-api-key}
+      PDNS_PRIMARY: ${PDNS_PRIMARY:-pdns-primary}
+      PDNS_ACTIVE_PRIMARY: ${PDNS_ACTIVE_PRIMARY:-A}
       GITOPS_SYNC_INTERVAL: ${GITOPS_SYNC_INTERVAL:-60}
       GITOPS_AUTO_APPLY: ${GITOPS_AUTO_APPLY:-true}
       GIT_REPO_URL: ${GIT_REPO_URL:-}
@@ -279,6 +420,8 @@ services:
 
 volumes:
   postgres_data:
+  postgres_replica_data:
   pdns_sec1_data:
   pdns_sec2_data:
+  pdns_primary_b_data:
   grafana_data:

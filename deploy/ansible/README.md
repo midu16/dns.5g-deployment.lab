@@ -19,8 +19,20 @@ deploy/ansible/
     ├── powerdns/
     ├── dnsdist/
     ├── unbound/
-    └── monitoring/
+    ├── monitoring/
+    ├── bird/          # v2 stub — anycast BGP on hosts
+    └── postgres_ha/   # v2 stub — streaming replica / Patroni
 ```
+
+## v2 production stubs
+
+| Role | Source configs | Notes |
+|------|----------------|-------|
+| `bird` | `config/bird/` | Host-level BIRD preferred over container BGP |
+| `postgres_ha` | `config/postgres/`, `init-replica.sh` | Patroni/repmgr for production |
+| `powerdns` standby | `pdns-standby.conf` | Promotion via runbook |
+
+See [primary failover](../../docs/runbooks/primary-failover.md) and [anycast-bgp.md](../../docs/scale-out/anycast-bgp.md).
 
 ## Quick start (skeleton)
 

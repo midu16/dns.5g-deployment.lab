@@ -60,4 +60,24 @@ else fail_test "SOA serial returned for infra zone"; fi
 
 echo
 echo "Results: ${pass} passed, ${fail} failed"
+
+# Optional v2 profile tests
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${ROBUST_DNS_PROFILES:-}" == *edge* ]] || podman ps --format '{{.Names}}' 2>/dev/null | grep -q robust-dns-dnsmasq-edge; then
+  echo
+  "$SCRIPT_DIR/edge-dnsmasq.sh" || fail=$((fail + 1))
+fi
+
+if [[ "${ROBUST_DNS_PROFILES:-}" == *policy* ]] || podman ps --format '{{.Names}}' 2>/dev/null | grep -q robust-dns-dns-tools-ext; then
+  echo
+  "$SCRIPT_DIR/policy-split-horizon.sh" || fail=$((fail + 1))
+fi
+
+if podman ps --format '{{.Names}}' 2>/dev/null | grep -q robust-dns-dnsdist-pop-eu; then
+  echo
+  "$SCRIPT_DIR/anycast-pop.sh" || fail=$((fail + 1))
+fi
+
+echo
+echo "Final: ${pass} passed, ${fail} failed"
 [[ "$fail" -eq 0 ]]
